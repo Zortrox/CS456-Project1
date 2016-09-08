@@ -5,12 +5,38 @@
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
+import java.util.*;
+
+class Node {
+	private Node parent;
+	private ArrayList<Node> adjList;
+	private int xGrid;
+	private int yGrid;
+	private int wallType;
+	private boolean hasPellet = false;
+
+	Node(Node newParent, int x, int y, int type) {
+		parent = newParent;
+		xGrid = x;
+		yGrid = y;
+		wallType = type;
+	}
+
+	void addNode(Node newNode, int x, int y, int type) {
+		adjList.add(new Node(this, x, y, type));
+	}
+
+	int getWallType() {
+		return wallType;
+	}
+}
 
 public class Hupman extends JFrame{
 
 	private int numRows, numCols, numPellets;
 	private int[][] arrMaze;
 	private int[][] arrPellets;
+	private Node startNode;
 	private boolean bFileRead = false;
 	private int gridOffset = 100;
 	private int gridSize = 50;
@@ -24,6 +50,7 @@ public class Hupman extends JFrame{
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
 		loadFile();
+		createGraph();
 		repaint();
 		setSize(numCols * gridSize + 2 * gridOffset, numRows * gridSize + 2 * gridOffset);
 		setVisible(true);
@@ -106,6 +133,20 @@ public class Hupman extends JFrame{
 			}
 		}
 		while (!bFileRead);
+	}
+
+	private void createGraph() {
+		startNode = new Node(null, hupmanX, hupmanY, arrMaze[hupmanY][hupmanX]);
+
+		int childrenLeft = 0;
+		Node tempNode = startNode;
+		do {
+			switch (tempNode.getWallType()) {
+				case 0:
+
+			}
+		}
+		while (childrenLeft > 0);
 	}
 
 	public static void main(String[] args) {

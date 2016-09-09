@@ -5,6 +5,7 @@
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
+import java.lang.reflect.Array;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -15,6 +16,10 @@ class Node {
 	private boolean hasPellet = false;
 	private boolean visited = false;
 	private Node parent = null;
+
+	//A* variables
+	private int gCost = 0;
+	private int hCost = 0;
 
 	Node(int x, int y) {
 		xGrid = x;
@@ -60,6 +65,23 @@ class Node {
 	int getY() {
 		return yGrid;
 	}
+
+	//A* functions
+	void setGCost(int g) {
+		gCost = g;
+	}
+
+	int getGCost() {
+		return gCost;
+	}
+
+	void setHCost(int h) {
+		hCost = h;
+	}
+
+	int getFCost() {
+		return hCost + gCost;
+	}
 }
 
 public class Hupman extends JFrame{
@@ -69,6 +91,7 @@ public class Hupman extends JFrame{
 	private int[][] arrPellets;
 	private Node startNode;
 	private Map<String, Node> mapNodes = new HashMap<>();
+	private Map<Node, Map<Node, ArrayList<Node>>> mapPaths = new HashMap<>();
 	private boolean bFileRead = false;
 	private int gridOffset = 100;
 	private int gridSize = 50;
@@ -83,6 +106,8 @@ public class Hupman extends JFrame{
 
 		loadFile();
 		createGraph();
+		resetPelletNodes();
+		createAllPaths();
 		repaint();
 		setSize(numCols * gridSize + 2 * gridOffset, numRows * gridSize + 2 * gridOffset);
 		setVisible(true);
@@ -229,13 +254,15 @@ public class Hupman extends JFrame{
 		}
 	}
 
-	private void resetNodes() {
+	private void resetPelletNodes() {
 		for (int i = 0; i<numPellets; i++) {
 			int x = arrPellets[i][0];
 			int y = arrPellets[i][1];
 			mapNodes.get(x + "-" + y).setHasPellet(true);
 		}
+	}
 
+	private void resetVisitedNodes() {
 		for (Map.Entry<String, Node> entry : mapNodes.entrySet())
 		{
 			entry.getValue().setVisited(false);
@@ -243,67 +270,238 @@ public class Hupman extends JFrame{
 		}
 	}
 
+	//get reverse path from end node to initial node
+	private ArrayList<Node> reversePath(Node endNode, Node initNode) {
+		ArrayList<Node> path = new ArrayList<>();
+
+		Node tempNode = endNode;
+		do {
+			tempNode = tempNode.getParent();
+			path.add(tempNode);
+		}
+		while (tempNode != null && tempNode != initNode);
+
+		Collections.reverse(path);
+		return path;
+	}
+
+	//depth first search iterative
 	private ArrayList<Node> searchDepth() {
+		ArrayList<Node> path = new ArrayList<>();
+
 		Stack<Node> stack = new  Stack<>();
 		stack.add(startNode);
 		startNode.setVisited(true);
 
 		int foundPellets = 0;
 		boolean bAllFound = false;
-		ArrayList<Node> path = new ArrayList<>();
+		boolean bPelletFound = false;
 
-		while (!stack.isEmpty() && !bAllFound)
-		{
-			Node thisNode = stack.peek();
+		while (!bAllFound) {
+			ArrayList<Node> tempPath = new ArrayList<>();
 
-			path.add(thisNode);
-			if (thisNode.getHasPellet()) {
-				foundPellets++;
-				thisNode.setHasPellet(false);
-			}
-			if (foundPellets == numPellets) bAllFound = true;
+			Node initNode = stack.peek();
+			Node thisNode = null;
+			while (!stack.isEmpty() && !bAllFound && !bPelletFound) {
+				thisNode = stack.pop();
 
-			int goodNodes = 0;
-			ArrayList<Node> arrAdj = thisNode.getAdjacentNodes();
-			for (int i = 0; i < arrAdj.size(); i++) {
-				Node checkNode = arrAdj.get(i);
-				if (checkNode != null && !checkNode.getVisited())
-				{
-					stack.add(checkNode);
-					checkNode.setParent(thisNode);
-					checkNode.setVisited(true);
-					goodNodes++;
+				if (thisNode.getHasPellet()) {
+					foundPellets++;
+					thisNode.setHasPellet(false);
+					bPelletFound = true;
+					tempPath = reversePath(thisNode, initNode);
+				}
+				if (foundPellets == numPellets) {
+					bAllFound = true;
+				}
 
-					//break the loop and go further down the tree
-					//add sibling nodes later
-					i = arrAdj.size();
+				ArrayList<Node> arrAdj = thisNode.getAdjacentNodes();
+				for (int i = 0; i < arrAdj.size(); i++) {
+					Node checkNode = arrAdj.get(i);
+					if (checkNode != null && !checkNode.getVisited()) {
+						stack.add(checkNode);
+						checkNode.setParent(thisNode);
+						checkNode.setVisited(true);
+					}
 				}
 			}
 
-			//if all children have been checked, move back up the graph
-			if (goodNodes == 0) stack.pop();
+			//add to current path
+			path.addAll(tempPath);
+
+			//reset for next search
+			stack.clear();
+			resetVisitedNodes();
+			bPelletFound = false;
+
+			//add first node again
+			stack.push(thisNode);
+			thisNode.setVisited(true);
 		}
+
+		//add final node
+		if (stack.peek() != null) path.add(stack.pop());
 
 		return path;
 	}
 
-	//go to closest pellet, direct lines
-	private ArrayList<Node> searchAStar() {
+	//breadth first search iterative
+	private ArrayList<Node> searchBreadth() {
 		ArrayList<Node> path = new ArrayList<>();
 
+		Queue<Node> queue = new LinkedList<>();
+		queue.add(startNode);
+		startNode.setVisited(true);
+
+		int foundPellets = 0;
+		boolean bAllFound = false;
+		boolean bPelletFound = false;
+
+		while (!bAllFound) {
+			ArrayList<Node> tempPath = new ArrayList<>();
+
+			Node initNode = queue.peek();
+			Node thisNode = null;
+			while (!queue.isEmpty() && !bAllFound && !bPelletFound) {
+				thisNode = queue.remove();
+
+				if (thisNode.getHasPellet()) {
+					foundPellets++;
+					thisNode.setHasPellet(false);
+					bPelletFound = true;
+					tempPath = reversePath(thisNode, initNode);
+				}
+				if (foundPellets == numPellets) {
+					bAllFound = true;
+				}
+
+				ArrayList<Node> arrAdj = thisNode.getAdjacentNodes();
+				for (int i = 0; i < arrAdj.size(); i++) {
+					Node checkNode = arrAdj.get(i);
+					if (checkNode != null && !checkNode.getVisited()) {
+						queue.add(checkNode);
+						checkNode.setParent(thisNode);
+						checkNode.setVisited(true);
+					}
+				}
+			}
+
+			//add to current path
+			path.addAll(tempPath);
+
+			//reset for next search
+			queue.clear();
+			resetVisitedNodes();
+			bPelletFound = false;
+
+			//add first node again
+			queue.add(thisNode);
+			thisNode.setVisited(true);
+		}
+
+		//add final node
+		if (queue.peek() != null) path.add(queue.remove());
+
 		return path;
+	}
+
+	//create paths and distances between pellets (and start) with A*
+	private void createAllPaths() {
+		ArrayList<Node> pelletNodes = new ArrayList<Node>();
+		pelletNodes.add(startNode);
+		for (int i = 0; i < numPellets; i++) {
+			String key = arrPellets[i][0] + "-" + arrPellets[i][1];
+			pelletNodes.add(mapNodes.get(key));
+		}
+
+		ArrayList<Node> path = null;
+		for (int loops = 0; loops < numPellets; loops++) {
+			Node initNode = pelletNodes.get(loops);
+			Node goalNode = null;
+
+			for (int inLoops = loops + 1; inLoops <= numPellets; inLoops++) {
+				goalNode = pelletNodes.get(inLoops);
+
+				ArrayList<Node> openList = new ArrayList<Node>();
+				ArrayList<Node> closedList = new ArrayList<Node>();
+				openList.add(initNode); //add starting node to open list
+
+				Node thisNode = null;
+
+				boolean done = false;
+				while (!done) {
+					thisNode = null;
+
+					//get node with lowest f cost from openList
+					int lowestF = -1;
+					for (int i = 0; i < openList.size(); i++) {
+						int newF = openList.get(i).getFCost();
+						if (lowestF < 0) {
+							lowestF = newF;
+							thisNode = openList.get(i);
+						} else if (newF < lowestF) {
+							lowestF = newF;
+							openList.get(i);
+						}
+					}
+
+					closedList.add(thisNode); //add current node to closed list
+					openList.remove(thisNode); //delete current node from open list
+
+					//found goal
+					if (thisNode == goalNode) {
+						//get path to node + ending node
+						done = true;
+						path = reversePath(thisNode, goalNode);
+						path.add(thisNode);
+					}
+
+					//for all adjacent nodes:
+					ArrayList<Node> arrAdj = thisNode.getAdjacentNodes();
+					for (int i = 0; i < arrAdj.size(); i++) {
+						Node nodeAdj = arrAdj.get(i);
+
+						//if not in the openList, add it
+						if (!openList.contains(nodeAdj)) {
+							int hCost = Math.abs(nodeAdj.getX() - goalNode.getX()) + Math.abs(nodeAdj.getY() - goalNode.getY());
+
+							nodeAdj.setParent(thisNode);
+							nodeAdj.setHCost(hCost);
+							nodeAdj.setGCost(thisNode.getGCost() + 1);
+							openList.add(nodeAdj);
+						}
+						//else if costs are cheaper, keep it open and lower g cost
+						else {
+							if (nodeAdj.getGCost() > thisNode.getGCost() + 1) { // costs from current node are cheaper than previous costs
+								nodeAdj.setParent(thisNode); // set current node as previous for this node
+								nodeAdj.setGCost(thisNode.getGCost() + 1);
+							}
+						}
+					}
+
+					//no path exists
+					if (openList.isEmpty()) {
+						done = true;
+						path = null;
+					}
+				}
+			}
+
+			//add path to initNode and goalNode (reverse)
+
+		}
 	}
 
 	//https://www.seas.gwu.edu/~simhaweb/champalg/tsp/tsp.html
 
-	//go to closest pellet, actual grid cost
+	//go to closest pellet, actual grid cost (from A*)
 	private ArrayList<Node> searchNearestNeighbor() {
 		ArrayList<Node> path = new ArrayList<>();
 
 		return path;
 	}
 
-	//switch 2 edges and get new cost
+	//switch 2 edges and get new path cost (from A*)
 	private ArrayList<Node> search2Op() {
 		ArrayList<Node> path = new ArrayList<>();
 
@@ -313,11 +511,10 @@ public class Hupman extends JFrame{
 
 	private void runAllSearches() {
 		ArrayList<Node> path;
-		resetNodes();
 
 		//depth first
 		path = searchDepth();
-		resetNodes();
+		resetPelletNodes();
 		System.out.println("Depth First: " + path.size() + " moves");
 		for (Node p : path) {
 			hupmanX = p.getX();
@@ -332,14 +529,38 @@ public class Hupman extends JFrame{
 			}
 			System.out.print("(" + p.getX() + "," + p.getY() + ") ");
 		}
-		resetNodes();
+		System.out.println();
+		resetVisitedNodes();
+		resetPelletNodes();
 		hupmanX = 0;
 		hupmanY = 0;
 		repaint();
 
-		//A* (direct line heuristic)
-		resetNodes();
-		path = searchAStar();
+		//breadth first
+		path = searchBreadth();
+		resetPelletNodes();
+		System.out.println("Breadth First: " + path.size() + " moves");
+		for (Node p : path) {
+			hupmanX = p.getX();
+			hupmanY = p.getY();
+			p.setHasPellet(false);
+			repaint(10);
+
+			try {
+				Thread.sleep(100);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			System.out.print("(" + p.getX() + "," + p.getY() + ") ");
+		}
+		System.out.println();
+		resetVisitedNodes();
+		resetPelletNodes();
+		hupmanX = 0;
+		hupmanY = 0;
+		repaint();
+
+
 
 	}
 

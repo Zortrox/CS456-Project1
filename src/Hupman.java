@@ -487,6 +487,7 @@ public class Hupman extends JFrame{
 				}
 			}
 
+			//// TODO: 9/9/2016  
 			//add path to initNode and goalNode (reverse)
 
 		}

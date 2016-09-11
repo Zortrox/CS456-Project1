@@ -4,6 +4,7 @@
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.io.*;
 import java.lang.reflect.Array;
 import java.util.*;
@@ -85,7 +86,7 @@ class Node {
 	}
 }
 
-public class Hupman extends JFrame{
+public class Hupman extends JPanel{
 
 	private int numRows, numCols, numPellets;
 	private int[][] arrMaze;
@@ -94,31 +95,53 @@ public class Hupman extends JFrame{
 	private Map<String, Node> mapNodes = new HashMap<>();
 	private Map<Node, Map<Node, ArrayList<Node>>> mapPaths = new HashMap<>();
 	private boolean bFileRead = false;
+	private int windowWidth = 600;
+	private int windowHeight = 600;
 	private int gridOffset = 100;
-	private int gridSize = 50;
-	private int pelletRadius = gridSize / 10;
+	private int gridSize = 20;
+	private int pelletRadius = gridSize / 5;
+	private int hupmanRadius = gridSize / 3;
 	private int hupmanX = 0;
 	private int hupmanY = 0;
-	private int hupmanRadius = gridSize / 3;
 
 	Hupman() {
-		setTitle("Hupman");
-		setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-
 		loadFile();
 		createGraph();
 		resetPelletNodes();
-		createAllPaths();
+
+		setPreferredSize(new Dimension(windowWidth, windowHeight));
+
 		repaint();
-		setSize(numCols * gridSize + 2 * gridOffset, numRows * gridSize + 2 * gridOffset);
-		setVisible(true);
-		
-		//// TODO: 9/10/2016 Run all searches on mouse click, get new hupman position on mouse click
-		runAllSearches();
+
+		addMouseListener(new MouseAdapter() {
+			public void mouseClicked(MouseEvent e) {
+				Point mousePos = e.getPoint();
+
+				int gridX = (mousePos.x - gridOffset) / gridSize;
+				int gridY = (mousePos.y - gridOffset) / gridSize;
+
+				if (gridX >= 0 && gridX < numCols && gridY >= 0 && gridY < numRows) {
+					startNode = mapNodes.get(gridX + "-" + gridY);
+
+					hupmanX = gridX;
+					hupmanY = gridY;
+
+					paintImmediately(0, 0, windowHeight, windowWidth);
+
+					resetPelletNodes();
+					resetVisitedNodes();
+					createAllPaths();
+
+					runAllSearches();
+				}
+			}
+		});
 	}
 
-	public void paint(Graphics g) {
-		g.clearRect(0, 0, numCols * gridSize + 2 * gridOffset, numRows * gridSize + 2 * gridOffset);
+	public void paintComponent(Graphics g) {
+		super.paintComponent(g);
+
+		//g2.clearRect(0, 0, windowWidth, windowHeight);
 
 		g.setColor(Color.BLACK);
 		g.drawRect(gridOffset, gridOffset, gridSize * arrMaze[0].length, gridSize * arrMaze.length);
@@ -165,6 +188,12 @@ public class Hupman extends JFrame{
 				comp = reader.readLine().split("\\s+");
 				numRows = Integer.parseInt(comp[0]);
 				numCols = Integer.parseInt(comp[1]);
+
+				int scaleFactor = Math.max(numRows, numCols);
+				int limitingFactor = Math.min(windowHeight, windowWidth);
+				gridSize = (limitingFactor - 2 * gridOffset) / scaleFactor;
+				pelletRadius = gridSize / 5;
+				hupmanRadius = gridSize / 3;
 
 				arrMaze = new int[numRows][numCols];
 				//wall types at grid positions
@@ -303,6 +332,7 @@ public class Hupman extends JFrame{
 
 		//metrics
 		int nodesSearched = 0;
+		int nodesFringe = 0;
 
 		while (!bAllFound) {
 			ArrayList<Node> tempPath = new ArrayList<>();
@@ -337,6 +367,8 @@ public class Hupman extends JFrame{
 			//add to current path
 			path.addAll(tempPath);
 
+			nodesFringe += stack.size();
+
 			//reset for next search
 			stack.clear();
 			resetVisitedNodes();
@@ -348,6 +380,7 @@ public class Hupman extends JFrame{
 		}
 
 		System.out.println("Depth First - Nodes Searched: " + nodesSearched);
+		System.out.println("Depth First - Nodes on Fringe: " + nodesFringe);
 
 		return path;
 	}
@@ -367,6 +400,7 @@ public class Hupman extends JFrame{
 
 		//metrics
 		int nodesSearched = 0;
+		int nodesFringe = 0;
 
 		while (!bAllFound) {
 			ArrayList<Node> tempPath = new ArrayList<>();
@@ -401,6 +435,8 @@ public class Hupman extends JFrame{
 			//add to current path
 			path.addAll(tempPath);
 
+			nodesFringe += queue.size();
+
 			//reset for next search
 			queue.clear();
 			resetVisitedNodes();
@@ -411,21 +447,61 @@ public class Hupman extends JFrame{
 			thisNode.setVisited(true);
 		}
 
-		System.out.println("Breadth First - Nodes Searched: " + nodesSearched);
+		System.out.println("Breadth First - Nodes Expanded: " + nodesSearched);
+		System.out.println("Breadth First - Nodes on Fringe: " + nodesFringe);
 
 		return path;
+	}
+
+	private ArrayList<ArrayList<Integer>> permute(int size) {
+		ArrayList<ArrayList<Integer>> permutations = new ArrayList<>();
+		permutations.add(new ArrayList<>());
+		int[] c = new int[size];
+
+		for (int i = 0; i < size; i++) {
+			c[i] = 0;
+			permutations.get(0).add(i + 1);
+		}
+
+		for (int i = 0; i < size;) {
+			if (c[i] < i) {
+				ArrayList<Integer> tempP = new ArrayList<>(permutations.get(permutations.size() - 1));
+
+				if (i % 2 == 0) {
+					Collections.swap(tempP, 0, i);
+				} else {
+					Collections.swap(tempP, c[i], i);
+				}
+
+				permutations.add(tempP);
+				c[i]++;
+				i = 0;
+			}
+			else {
+				c[i] = 0;
+				i++;
+			}
+		}
+
+		return permutations;
 	}
 
 	//create paths and distances between pellets (and start) with A*
 	private void createAllPaths() {
 		ArrayList<Node> pelletNodes = new ArrayList<Node>();
 		pelletNodes.add(startNode);
+
+		mapPaths = new HashMap<>();
 		mapPaths.put(startNode, new HashMap<>());
 		for (int i = 0; i < numPellets; i++) {
 			String key = arrPellets[i][0] + "-" + arrPellets[i][1];
 			pelletNodes.add(mapNodes.get(key));
 			mapPaths.put(mapNodes.get(key), new HashMap<>());
 		}
+
+		//metrics
+		int nodesSearched = 0;
+		System.out.println("A* Search Metrics");
 
 		for (int loops = 0; loops < numPellets; loops++) {
 			Node initNode = pelletNodes.get(loops);
@@ -443,6 +519,8 @@ public class Hupman extends JFrame{
 				boolean done = false;
 				while (!done) {
 					thisNode = null;
+
+					nodesSearched++;
 
 					//get node with lowest f cost from openList
 					int lowestF = -1;
@@ -464,7 +542,7 @@ public class Hupman extends JFrame{
 						path = reversePath(thisNode, initNode);
 					}
 
-					//continue is node wasn't the goal node
+					//continue if node wasn't the goal node
 					if (!done) {
 						//for all adjacent nodes:
 						ArrayList<Node> arrAdj = thisNode.getAdjacentNodes();
@@ -479,12 +557,16 @@ public class Hupman extends JFrame{
 								nodeAdj.setHCost(hCost);
 								nodeAdj.setGCost(thisNode.getGCost() + 1);
 								openList.add(nodeAdj);
+
+
 							}
 							//else if costs are cheaper, keep it open and lower g cost
 							else {
 								if (nodeAdj.getGCost() > thisNode.getGCost() + 1) {
+									nodeAdj.setVisited(false);
 									nodeAdj.setParent(thisNode);
 									nodeAdj.setGCost(thisNode.getGCost() + 1);
+									openList.add(nodeAdj);
 								}
 							}
 						}
@@ -509,11 +591,21 @@ public class Hupman extends JFrame{
 
 					//reset visited nodes
 					resetVisitedNodes();
+
+					String initCoords = "(" + initNode.getX() + "," + initNode.getY() + ")";
+					String goalCoords = "(" + goalNode.getX() + "," + goalNode.getY() + ")";
+
+					System.out.println(initCoords + "<->" + goalCoords + " Path Length: " + path.size()
+						+ ", Nodes Expanded: " + nodesSearched + ", Nodes on Fringe: " + openList.size());
+				} else {
+					String initCoords = "(" + initNode.getX() + "," + initNode.getY() + ")";
+					String goalCoords = "(" + goalNode.getX() + "," + goalNode.getY() + ")";
+					System.out.println(initCoords + "<->" + goalCoords + " No path found.");
 				}
 			}
 		}
-		
-		//// TODO: 9/10/2016 Get metrics for A* searches (numbers for all nodes to all nodes on one line)
+
+		System.out.println();
 	}
 
 	//go to closest pellet, actual grid cost (from A*)
@@ -544,8 +636,8 @@ public class Hupman extends JFrame{
 		return path;
 	}
 
-	//switch within twice the optimum (from A*)
-	private ArrayList<Node> search2Opt() {
+	//switch within all permutations of the paths
+	private ArrayList<Node> searchPermute() {
 		ArrayList<Node> path = new ArrayList<>();
 
 		ArrayList<Node> pelletNodes = new ArrayList<Node>();
@@ -554,6 +646,8 @@ public class Hupman extends JFrame{
 			String key = arrPellets[i][0] + "-" + arrPellets[i][1];
 			pelletNodes.add(mapNodes.get(key));
 		}
+
+		ArrayList<ArrayList<Integer>> permutations = permute(pelletNodes.size() - 1);
 
 		//create initial path
 		path.add(startNode);
@@ -566,54 +660,37 @@ public class Hupman extends JFrame{
 		//set the distance to be better than
 		int bestDist = path.size();
 
-		int swapsAll = 0;
-		int swapsGood = 0;
+		int pathsTotal = permutations.size();
+		int pathsBetter = 0;
 
 		boolean noSwap = false;
-		while (!noSwap) {
-			noSwap = true;
+		for (int i = 0; i < permutations.size(); i++) {
+			ArrayList<Node> tempPath = new ArrayList<>();
 
-			//reorder path
-			for (int i = 1; i < pelletNodes.size() - 1; i++) {
-				for (int j = i + 1; j < pelletNodes.size(); j++) {
-					ArrayList<Node> tempPath = new ArrayList<>();
+			//build the new path
+			tempPath.add(startNode);
+			for (int k = 0; k < pelletNodes.size() - 1; k++) {
+				Node thisNode = k == 0 ? pelletNodes.get(0) : pelletNodes.get(permutations.get(i).get(k - 1));
+				Node goalNode = pelletNodes.get(permutations.get(i).get(k));
 
-					//the swap
-					ArrayList<Node> beginning = new ArrayList<>(pelletNodes.subList(0, i));
-					ArrayList<Node> reverseInner = new ArrayList<>(pelletNodes.subList(i, j+1));
-					Collections.reverse(reverseInner);
-					ArrayList<Node> end = new ArrayList<>(pelletNodes.subList(j+1, pelletNodes.size()));
-					pelletNodes = new ArrayList<>(beginning);
-					pelletNodes.addAll(reverseInner);
-					pelletNodes.addAll(end);
-					swapsAll++;
-
-					//build the new path
-					tempPath.add(startNode);
-					for (int k = 0; k < pelletNodes.size() - 1; k++) {
-						Node thisNode = pelletNodes.get(k);
-						Node goalNode = pelletNodes.get(k + 1);
-
-						//make sure there's a path between
-						ArrayList<Node> twoNodes = mapPaths.get(thisNode).get(goalNode);
-						if (twoNodes != null) {
-							tempPath.addAll(twoNodes);
-						}
-					}
-
-					//check if the new path is less than
-					if (tempPath.size() < path.size()) {
-						path = tempPath;
-						noSwap = false;
-						bestDist = path.size();
-						swapsGood++;
-					}
+				//make sure there's a path between
+				ArrayList<Node> twoNodes = mapPaths.get(thisNode).get(goalNode);
+				if (twoNodes != null) {
+					tempPath.addAll(twoNodes);
 				}
+			}
+
+			//check if the new path is less than
+			if (tempPath.size() < path.size()) {
+				path = tempPath;
+				noSwap = false;
+				bestDist = path.size();
+				pathsBetter++;
 			}
 		}
 
-		System.out.println("Two Opt All Swaps: " + swapsAll);
-		System.out.println("Two Opt Good Swaps: " + swapsGood);
+		System.out.println("Total Permutations: " + pathsTotal);
+		System.out.println("Better Permutations Found: " + pathsBetter);
 
 		return path;
 	}
@@ -627,7 +704,7 @@ public class Hupman extends JFrame{
 			hupmanX = p.getX();
 			hupmanY = p.getY();
 			p.setHasPellet(false);
-			repaint(10);
+			paintImmediately(0, 0, windowHeight, windowWidth);
 			System.out.print("(" + p.getX() + "," + p.getY() + ") ");
 
 			try {
@@ -659,11 +736,19 @@ public class Hupman extends JFrame{
 		//path = searchNearestNeighbor();
 		moveHupman("Nearest Neighbor", path);
 
-		path = search2Opt();
-		moveHupman("Two Opt", path);
+		path = searchPermute();
+		moveHupman("Permutation", path);
 	}
 
 	public static void main(String[] args) {
+		JFrame frame = new JFrame("Hupman");
+		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+		frame.setSize(200, 200);
+		frame.setVisible(true);
+
 		Hupman hup = new Hupman();
+		frame.getContentPane().add(hup);
+
+		frame.pack();
 	}
 }
